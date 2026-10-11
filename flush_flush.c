@@ -71,7 +71,7 @@ _mm_lfence();// fence the previous instruction
 int main(int argc, char** argv){ // integer containing the number of command-line argumetns  
 
     char* name = argv[1]; // points to our string 
-    char* offsetp = argv[2]; // pointer to argv value which will probably be a number
+    char* offset = argv[2]; // pointer to argv value which will probably be a number
 _mm_lfence();
     if(argc != 3){return 1;}
     
