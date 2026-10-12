@@ -78,7 +78,12 @@ _mm_lfence();
     
     unsigned int offset = 0;
 
-    !sscanf(offset_pointer, "%x", &offset); // convert text entered into a number, negate because we dont store the value 
+    
+    if (sscanf(offset_pointer, "%x", &offset) != 1) {
+    printf("Invalid hexadecimal offset\n");
+    return 1;
+}
+
 
     int fd = open(name,O_RDONLY);// open the file "name" in read only mode
 
