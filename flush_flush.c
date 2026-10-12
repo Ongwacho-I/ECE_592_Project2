@@ -71,15 +71,17 @@ _mm_lfence();// fence the previous instruction
 int main(int argc, char** argv){ // integer containing the number of command-line argumetns  
 
     char* name = argv[1]; // points to our string 
-    char* offset = argv[2]; // pointer to argv value which will probably be a number
+    char* offset_pointer = argv[2]; // pointer to argv value which will probably be a number
 _mm_lfence();
     if(argc != 3){return 1;}
+
     
     unsigned int offset = 0;
 
-    !sscanf(offset, "%x", &offset); // convert text entered into a number, negate because we dont store the value 
+    !sscanf(offset_pointer, "%x", &offset); // convert text entered into a number, negate because we dont store the value 
 
     int fd = open(name,O_RDONLY);// open the file "name" in read only mode
+
 
     if(fd < 3){ return 2;} // checking if opening the file worked 
 
