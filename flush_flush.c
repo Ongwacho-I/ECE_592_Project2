@@ -55,11 +55,11 @@ _mm_lfence();// fence instruction
 _mm_lfence(); // fence instruction
 
 
-    if(delta >= 172 && delta <= 200){ 
+    if(delta >= 172 && delta <= 200){ // looking to see range of time difference
 
         if (kpause > 1000){
 
-            printf("cache Hit(%zu) after %10lu cycles, t=%10lu us\n", delta, kpause, (time-start)/2600);
+            printf("cache Hit(%zu) after %10lu cycles, t=%10lu us\n", delta, kpause, (time-start)/2600); // print when we get cache hits
 
 _mm_lfence();// fence printf instruction
 
@@ -108,14 +108,14 @@ _mm_lfence();
 
     start = __rdtsc(); // start timer and passing an address 
 
-    while(1){
+    for(int j = 0; j < 10,000; j++){
 
         flushandflush(addr + offset);
 
         for(int i = 0; i < 30; ++i){ // sched_yield is performed 30 times 
             sched_yield();
         }
-    }
+    } // end of outer for
 
 
 
