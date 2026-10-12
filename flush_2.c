@@ -123,6 +123,6 @@ _mm_lfence();
 
     munmap(addr, 64*1024*1024);
     close(fd);
-    return 0;
+    return 0; // end 
 
 }// end main
